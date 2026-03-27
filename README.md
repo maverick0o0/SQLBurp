@@ -8,9 +8,7 @@ A Burp Suite extension that integrates the sqlmap REST API into your testing wor
 
 <img width="1446" height="725" alt="image" src="https://github.com/user-attachments/assets/8ea98fcc-a1b1-4d1b-9380-00eeeb113d54" />
 
-
 <img width="1446" height="725" alt="image" src="https://github.com/user-attachments/assets/cb8e8818-9b3a-4b09-a839-f8a755a24764" />
-
 
 ## 🚀 Setup
 
@@ -36,9 +34,13 @@ The **SQLBurp** tab will appear. Use the **Ping** button to verify the API is re
 
 ### Sending a request
 
-Right-click any request in Proxy, Repeater, Target, or anywhere else in Burp and select **Send to SQLMap API**. The scan is submitted immediately using the current configuration panel settings.
+Right-click any request in Proxy, Repeater, Target, or anywhere else in Burp and select **Send to SQLMap API**. The scan is submitted immediately using the current Options tab settings.
 
-### ⚡ Configuration panel
+### ⚡ Options tab
+
+The Options tab is split into four sections.
+
+#### Core Options
 
 | Setting | Description |
 | --- | --- |
@@ -49,20 +51,81 @@ Right-click any request in Proxy, Repeater, Target, or anywhere else in Burp and
 | Technique | SQLi techniques to test (e.g. `BEUSTQ`) |
 | DBMS | Force a specific backend, or leave as `(auto)` |
 | Tamper | Comma-separated tamper scripts (e.g. `space2comment,randomcase`) |
-| Batch | Non-interactive mode (always use defaults) |
+| Poll (s) | How often to poll for status updates |
+
+#### Extra sqlmap Arguments
+
+A free-form text field for passing additional sqlmap flags that aren't exposed in the UI. Flags are parsed and mapped to their correct sqlmapapi JSON keys, so they are actually applied to the scan.
+
+Supported flags include:
+
+| Flag | Description |
+| --- | --- |
+| `--delay=N` | Seconds to wait between each HTTP request |
+| `--timeout=N` | Seconds before a request times out |
+| `--retries=N` | Number of retries on connection timeout |
+| `--time-sec=N` | Seconds to delay for time-based blind injection |
+| `--proxy=URL` | Route requests through a proxy |
+| `--proxy-cred=user:pass` | Proxy authentication credentials |
+| `--user-agent=UA` | Custom User-Agent header |
+| `--referer=URL` | Custom Referer header |
+| `--cookie=COOKIE` | Custom cookie string |
+| `--headers=HEADERS` | Extra HTTP headers |
+| `--auth-type=TYPE` | HTTP authentication type (Basic, Digest, NTLM) |
+| `--auth-cred=user:pass` | HTTP authentication credentials |
+| `--tor` | Route through Tor |
+| `--tor-type=TYPE` | Tor proxy type |
+| `--tor-port=N` | Tor proxy port |
+| `--ignore-proxy` | Ignore system proxy settings |
+| `--ignore-redirects` | Ignore redirects |
+| `--ignore-timeouts` | Ignore connection timeouts |
+| `--force-ssl` | Force HTTPS |
+| `--flush-session` | Clear session data and re-test |
+| `--fresh-queries` | Ignore cached query results |
+| `--mobile` | Emulate a mobile User-Agent |
+| `--prefix=STR` | Injection payload prefix |
+| `--suffix=STR` | Injection payload suffix |
+| `--safe-url=URL` | URL to visit periodically during testing |
+| `--text-only` | Compare pages based on text content only |
+
+**Example:** `--delay=2 --timeout=30 --proxy=http://127.0.0.1:8080`
+
+Unknown flags are silently ignored.
+
+#### Flags
+
+| Flag | Description |
+| --- | --- |
+| Batch | Non-interactive mode (sqlmap uses its own defaults for any prompts) |
 | Random Agent | Randomise the User-Agent header |
-| Parse Forms | Discover and test forms on the target page |
+| Forms | Discover and test forms on the target page |
 | Enum DBs | Enumerate databases on injection confirmation |
 | Current User | Retrieve the current database user |
 | Banner | Retrieve the DBMS banner |
 | Is DBA | Check whether the current user has DBA privileges |
-| Poll (s) | How often to poll for status updates |
+
+#### Prompt Answers
+
+Only visible when **Batch** is unchecked. Lets you pre-configure sqlmap's response to known interactive prompts. Each prompt can be set to **Yes**, **No**, or **Default** (sqlmap's own built-in default for that prompt).
+
+| Prompt | Description |
+| --- | --- |
+| Crack found hashes | Attempt to crack any discovered password hashes |
+| Dictionary-based hash attack | Use a wordlist for hash cracking |
+| Store hashes to CSV file | Save discovered hashes to a file |
+| Use common password suffixes | Append common suffixes during hash cracking |
+| Quit after finding first injection | Stop testing once one injectable parameter is found |
+| Merge scan results | Merge results from multiple runs |
+| Flush session and re-test | Clear cached session data and restart testing |
+| Retrieve full schema | Enumerate the full database schema |
+| Adjust level/risk for WAF detection | Automatically increase level/risk if a WAF is detected |
+| Skip testing other parameters | Stop after the first vulnerable parameter is confirmed |
 
 Settings are snapshotted at submission time, so each scan row remembers the exact options it was run with. Changing the panel after submission does not affect running scans.
 
-### 📊 Scan table
+### 📊 Scans tab
 
-Each submitted request appears as a row. Columns are sortable. Click any row to view its live log and option snapshot in the detail panel below.
+The Scans tab contains the scan table and log output. Each submitted request appears as a row. Columns are sortable. Click any row to view its live log and option snapshot in the detail panel below.
 
 | Status | Meaning |
 | --- | --- |
@@ -79,7 +142,6 @@ Each submitted request appears as a row. Columns are sortable. Click any row to 
 | --- | --- |
 | Stop Task | Sends a stop signal to sqlmapapi and marks the scan as Stopped |
 | Delete Task | Stops the scan, deletes it from the API, and removes all persisted data |
-| Remove Row | Removes the row and purges persisted data without touching the API |
 
 ### 🧰 Toolbar
 
@@ -103,6 +165,7 @@ Deleting a scan via right-click or Remove Finished purges it from both the API a
 - The extension deduplicates requests, so sending the same request multiple times in a single action will only create one scan.
 - HTTPS targets are detected automatically from the HTTP service; `forceSSL` is set accordingly.
 - For scans that were still running when the extension was last closed, the extension will attempt to reconnect to the live API on load. If the API has been restarted in the interim, those scans will show their last known status.
+- DEBUG-level log entries from sqlmap are filtered out of the log view to keep output readable.
 
 ## 🔨 Building from source
 
