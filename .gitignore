@@ -1,0 +1,7 @@
+# Gradle cache and build output
+.gradle/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
