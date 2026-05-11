@@ -3,12 +3,19 @@ package com.sqlburp;
 import burp.api.montoya.utilities.json.JsonObjectNode;
 import burp.api.montoya.utilities.json.JsonNode;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static burp.api.montoya.utilities.json.JsonObjectNode.jsonObjectNode;
 
 public class ScanOptions {
+
+    private static final Pattern CUSTOM_ARG_PATTERN =
+        Pattern.compile("--[\\w-]+=\\S+|--[\\w-]+");
 
     public int     level       = 1;
     public int     risk        = 1;
@@ -119,10 +126,8 @@ public class ScanOptions {
      * Supports both "--flag=value" and "--flag value" forms, and bare boolean switches.
      */
     private void applyCustomArgs(JsonObjectNode n, String args) {
-        java.util.List<String> tokens = new java.util.ArrayList<>();
-        java.util.regex.Matcher m = java.util.regex.Pattern
-            .compile("--[\\w-]+=\\S+|--[\\w-]+")
-            .matcher(args);
+        List<String> tokens = new ArrayList<>();
+        Matcher m = CUSTOM_ARG_PATTERN.matcher(args);
         while (m.find()) tokens.add(m.group());
 
         for (int i = 0; i < tokens.size(); i++) {
@@ -224,33 +229,54 @@ public class ScanOptions {
     public static ScanOptions fromJson(JsonObjectNode j) {
         ScanOptions o = new ScanOptions();
         if (j == null) return o;
-        Long level = j.getLong("level"); if (level != null) o.level = level.intValue();
-        Long risk = j.getLong("risk"); if (risk != null) o.risk = risk.intValue();
-        Long threads = j.getLong("threads"); if (threads != null) o.threads = threads.intValue();
-        String technique = j.getString("technique"); if (technique != null) o.technique = technique;
-        String dbms = j.getString("dbms"); if (dbms != null) o.dbms = dbms;
-        String tamper = j.getString("tamper"); if (tamper != null) o.tamper = tamper;
-        Boolean batch = j.getBoolean("batch"); if (batch != null) o.batch = batch;
-        Boolean randomAgent = j.getBoolean("randomAgent"); if (randomAgent != null) o.randomAgent = randomAgent;
-        Boolean forms = j.getBoolean("forms"); if (forms != null) o.forms = forms;
-        Boolean getDbs = j.getBoolean("getDbs"); if (getDbs != null) o.getDbs = getDbs;
-        Boolean currentUser = j.getBoolean("currentUser"); if (currentUser != null) o.currentUser = currentUser;
-        Boolean banner = j.getBoolean("banner"); if (banner != null) o.banner = banner;
-        Boolean isDba = j.getBoolean("isDba"); if (isDba != null) o.isDba = isDba;
-        Boolean forceSSL = j.getBoolean("forceSSL"); if (forceSSL != null) o.forceSSL = forceSSL;
-        Long verbose = j.getLong("verbose"); if (verbose != null) o.verbose = verbose.intValue();
-        String customArgs = j.getString("customArgs"); if (customArgs != null) o.customArgs = customArgs;
+        o.level       = safeInt(j, "level", o.level);
+        o.risk        = safeInt(j, "risk", o.risk);
+        o.threads     = safeInt(j, "threads", o.threads);
+        o.technique   = safeStr(j, "technique", o.technique);
+        o.dbms        = safeStr(j, "dbms", o.dbms);
+        o.tamper      = safeStr(j, "tamper", o.tamper);
+        o.batch       = safeBool(j, "batch", o.batch);
+        o.randomAgent = safeBool(j, "randomAgent", o.randomAgent);
+        o.forms       = safeBool(j, "forms", o.forms);
+        o.getDbs      = safeBool(j, "getDbs", o.getDbs);
+        o.currentUser = safeBool(j, "currentUser", o.currentUser);
+        o.banner      = safeBool(j, "banner", o.banner);
+        o.isDba       = safeBool(j, "isDba", o.isDba);
+        o.forceSSL    = safeBool(j, "forceSSL", o.forceSSL);
+        o.verbose     = safeInt(j, "verbose", o.verbose);
+        o.customArgs  = safeStr(j, "customArgs", o.customArgs);
         // Restore answers map
         JsonNode answersNode = j.get("answers");
         if (answersNode != null && answersNode.isObject()) {
             JsonObjectNode answersObj = answersNode.asObject();
             for (String[] prompt : ANSWER_PROMPTS) {
                 String key = prompt[0];
-                String val = answersObj.getString(key);
-                if (val != null) o.answers.put(key, val);
+                JsonNode valNode = answersObj.get(key);
+                if (valNode != null && valNode.isString()) {
+                    o.answers.put(key, valNode.asString());
+                }
             }
         }
         return o;
+    }
+
+    /** Safely read a string from a Montoya JsonObjectNode (avoids NPE on missing keys). */
+    private static String safeStr(JsonObjectNode j, String key, String fallback) {
+        JsonNode n = j.get(key);
+        return (n != null && n.isString()) ? n.asString() : fallback;
+    }
+
+    /** Safely read a boolean from a Montoya JsonObjectNode. */
+    private static boolean safeBool(JsonObjectNode j, String key, boolean fallback) {
+        JsonNode n = j.get(key);
+        return (n != null && n.isBoolean()) ? n.asBoolean() : fallback;
+    }
+
+    /** Safely read an int from a Montoya JsonObjectNode. */
+    private static int safeInt(JsonObjectNode j, String key, int fallback) {
+        JsonNode n = j.get(key);
+        if (n == null || !n.isNumber()) return fallback;
+        return ((Number) n.asNumber()).intValue();
     }
 
     public String[] summaryLines() {
