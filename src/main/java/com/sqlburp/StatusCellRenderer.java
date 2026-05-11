@@ -13,6 +13,8 @@ public class StatusCellRenderer extends DefaultTableCellRenderer {
     private static final Color COL_QUEUED  = new Color(0x60, 0x60, 0x60);
     private static final Color COL_STOPPED = new Color(0x40, 0x40, 0x40);
 
+    private Font cachedBoldFont;
+
     @Override
     public Component getTableCellRendererComponent(JTable table, Object value,
                                                    boolean isSelected, boolean hasFocus,
@@ -29,7 +31,12 @@ public class StatusCellRenderer extends DefaultTableCellRenderer {
                 default                        -> COL_QUEUED;
             };
             setForeground(c);
-            setFont(getFont().deriveFont(Font.BOLD));
+            Font base = getFont();
+            if (cachedBoldFont == null || cachedBoldFont.getSize() != base.getSize()
+                    || !cachedBoldFont.getFamily().equals(base.getFamily())) {
+                cachedBoldFont = base.deriveFont(Font.BOLD);
+            }
+            setFont(cachedBoldFont);
         }
         return this;
     }
