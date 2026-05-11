@@ -39,24 +39,24 @@ public class PollWorker implements Runnable {
         return LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
     }
 
-    private void log(String msg) {
-        record.appendLog(msg);
-        persist.saveScanRecord(record);
-        onUpdate.accept(record);
-    }
-
     @Override
     public void run() {
-        log("[" + ts() + "] Polling started.");
+        record.appendLog("[" + ts() + "] Polling started.");
+        persist.saveScanRecord(record);
+        onUpdate.accept(record);
+
         int seenLogCount = 0;
         try {
             while (running) {
+                boolean dirty = false;
+
                 String apiStatus;
                 try {
                     apiStatus = api.scanStatus(baseUrl, record.taskId);
                 } catch (Exception e) {
-                    log("[" + ts() + "] Poll error: " + e.getMessage());
+                    record.appendLog("[" + ts() + "] Poll error: " + e.getMessage());
                     record.status = ScanRecord.STATUS_ERROR;
+                    persist.saveScanRecord(record);
                     onUpdate.accept(record);
                     sleep(5_000);
                     continue;
@@ -83,15 +83,19 @@ public class PollWorker implements Runnable {
                         }
                         if (total > seenLogCount) {
                             seenLogCount = total;
-                            persist.saveScanRecord(record);
-                            onUpdate.accept(record);
+                            dirty = true;
                         }
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    logging.logToError("SQLBurp: error fetching log for "
+                        + record.taskId + ": " + e.getMessage());
+                }
 
                 if ("running".equals(apiStatus)) {
-                    record.status = ScanRecord.STATUS_RUNNING;
-                    onUpdate.accept(record);
+                    if (!ScanRecord.STATUS_RUNNING.equals(record.status)) {
+                        record.status = ScanRecord.STATUS_RUNNING;
+                        dirty = true;
+                    }
 
                 } else if ("terminated".equals(apiStatus) || "not running".equals(apiStatus)) {
                     try {
@@ -103,16 +107,16 @@ public class PollWorker implements Runnable {
                             }
                             record.findings = record.results.size();
                             record.status   = ScanRecord.STATUS_VULN;
-                            log("\n=== INJECTION POINTS CONFIRMED ===");
-                            for (Object item : record.results) {
-                                log(((JsonNode) item).toJsonString());
+                            record.appendLog("\n=== INJECTION POINTS CONFIRMED ===");
+                            for (JsonNode item : record.results) {
+                                record.appendLog(item.toJsonString());
                             }
                         } else {
                             record.status = ScanRecord.STATUS_DONE;
-                            log("[" + ts() + "] Scan complete. No injections confirmed.");
+                            record.appendLog("[" + ts() + "] Scan complete. No injections confirmed.");
                         }
                     } catch (Exception e) {
-                        log("[" + ts() + "] Data fetch error: " + e.getMessage());
+                        record.appendLog("[" + ts() + "] Data fetch error: " + e.getMessage());
                         record.status = ScanRecord.STATUS_ERROR;
                     }
                     persist.saveScanRecord(record);
@@ -120,14 +124,22 @@ public class PollWorker implements Runnable {
                     break;
                 }
 
+                // Batch: persist and update UI once per cycle only if something changed
+                if (dirty) {
+                    persist.saveScanRecord(record);
+                    onUpdate.accept(record);
+                }
+
                 sleep(pollIntervalMs);
             }
         } catch (Exception e) {
-            log("[Fatal] " + e.getMessage());
+            record.appendLog("[Fatal] " + e.getMessage());
             record.status = ScanRecord.STATUS_ERROR;
+            persist.saveScanRecord(record);
             onUpdate.accept(record);
         }
-        log("[" + ts() + "] Polling stopped.");
+        record.appendLog("[" + ts() + "] Polling stopped.");
+        persist.saveScanRecord(record);
     }
 
     private void sleep(int ms) {
