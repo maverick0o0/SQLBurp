@@ -2,13 +2,16 @@ package com.sqlburp;
 
 import javax.swing.table.AbstractTableModel;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class ScanTableModel extends AbstractTableModel {
 
     private static final String[] COLS = {"#", "Task ID", "Target", "Method", "Status", "Findings", "Started"};
 
     private final List<ScanRecord> rows = new ArrayList<>();
+    private final Map<String, Integer> indexByTaskId = new HashMap<>();
 
     @Override public int getRowCount()    { return rows.size(); }
     @Override public int getColumnCount() { return COLS.length; }
@@ -32,18 +35,27 @@ public class ScanTableModel extends AbstractTableModel {
     }
 
     public void addRow(ScanRecord rec) {
+        int idx = rows.size();
         rows.add(rec);
-        fireTableRowsInserted(rows.size() - 1, rows.size() - 1);
+        indexByTaskId.put(rec.taskId, idx);
+        fireTableRowsInserted(idx, idx);
     }
 
     public void refreshRow(ScanRecord rec) {
-        int idx = rows.indexOf(rec);
-        if (idx >= 0) fireTableRowsUpdated(idx, idx);
+        Integer idx = indexByTaskId.get(rec.taskId);
+        if (idx != null && idx >= 0 && idx < rows.size()) {
+            fireTableRowsUpdated(idx, idx);
+        }
     }
 
     public void removeRow(int modelRow) {
         if (modelRow < 0 || modelRow >= rows.size()) return;
-        rows.remove(modelRow);
+        ScanRecord removed = rows.remove(modelRow);
+        indexByTaskId.remove(removed.taskId);
+        // Rebuild indices from the removal point onward
+        for (int i = modelRow; i < rows.size(); i++) {
+            indexByTaskId.put(rows.get(i).taskId, i);
+        }
         fireTableRowsDeleted(modelRow, modelRow);
         // Refresh # column
         if (modelRow < rows.size()) fireTableRowsUpdated(modelRow, rows.size() - 1);
