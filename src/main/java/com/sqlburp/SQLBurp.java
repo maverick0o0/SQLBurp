@@ -63,7 +63,8 @@ public class SQLBurp implements BurpExtension {
         });
 
         this.persist = new PersistenceManager(
-            api.persistence().extensionData()
+            api.persistence().extensionData(),
+            logging
         );
 
         SwingUtilities.invokeLater(this::buildUi);
@@ -202,19 +203,22 @@ public class SQLBurp implements BurpExtension {
 
             JMenuItem item = new JMenuItem("Send to SQLMap API");
             item.addActionListener(e -> {
+                Set<String> seen = new HashSet<>();
                 for (var msg : messages) {
                     if (msg.requestResponse().request() == null) continue;
                     var rr     = msg.requestResponse();
-                    String raw = rr.request().toString();
                     String key = dedupKey(rr.httpService().host(),
                                           rr.httpService().port(),
                                           rr.request().toByteArray());
-                    String proto  = rr.httpService().secure() ? "https" : "http";
-                    String target = proto + "://" + rr.httpService().host()
-                                  + ":" + rr.httpService().port();
-                    String method = rr.request().method();
-                    new Thread(() -> submitScan(target, method, raw,
-                        rr.httpService().secure()), "sqlburp-scan").start();
+                    if (seen.add(key)) {
+                        String raw    = rr.request().toString();
+                        String proto  = rr.httpService().secure() ? "https" : "http";
+                        String target = proto + "://" + rr.httpService().host()
+                                      + ":" + rr.httpService().port();
+                        String method = rr.request().method();
+                        new Thread(() -> submitScan(target, method, raw,
+                            rr.httpService().secure()), "sqlburp-scan").start();
+                    }
                 }
             });
             return List.of(item);
@@ -347,23 +351,19 @@ public class SQLBurp implements BurpExtension {
     private void removeFinished() {
         Set<String> terminal = Set.of(
             ScanRecord.STATUS_DONE, ScanRecord.STATUS_STOPPED, ScanRecord.STATUS_ERROR);
-        List<ScanRecord> toRemove = new ArrayList<>();
-        for (ScanRecord r : tableModel.getRecords()) {
-            if (terminal.contains(r.status)) toRemove.add(r);
-        }
-        for (ScanRecord r : toRemove) {
-            persist.deleteScanRecord(r.taskId);
-            recordsMap.remove(r.taskId);
-            pollThreads.remove(r.taskId);
-            if (r.taskId.equals(selectedTid)) {
-                selectedTid = null;
-                previewArea.setText("Select a scan row above to view its log.");
-            }
-        }
-        // Remove from table in reverse index order
+        // Single reverse pass: remove from table and clean up in one go
         for (int i = tableModel.getRowCount() - 1; i >= 0; i--) {
             ScanRecord r = tableModel.getRecord(i);
-            if (r != null && terminal.contains(r.status)) tableModel.removeRow(i);
+            if (r != null && terminal.contains(r.status)) {
+                persist.deleteScanRecord(r.taskId);
+                recordsMap.remove(r.taskId);
+                pollThreads.remove(r.taskId);
+                if (r.taskId.equals(selectedTid)) {
+                    selectedTid = null;
+                    previewArea.setText("Select a scan row above to view its log.");
+                }
+                tableModel.removeRow(i);
+            }
         }
     }
 
@@ -410,7 +410,9 @@ public class SQLBurp implements BurpExtension {
         sb.append("--- Options ---\n");
         for (String line : rec.options.summaryLines()) sb.append(line).append("\n");
         sb.append("\n--- Log ---\n");
-        for (String line : rec.logLines) sb.append(line).append("\n");
+        synchronized (rec.logLines) {
+            for (String line : rec.logLines) sb.append(line).append("\n");
+        }
 
         if (scrollToTop) {
             previewArea.setText(sb.toString());
@@ -458,7 +460,10 @@ public class SQLBurp implements BurpExtension {
 
     private void restorePersistedScans() {
         List<String> stored = persist.loadTaskIds();
-        if (stored.isEmpty()) return;
+        if (stored.isEmpty()) {
+            logging.logToOutput("SQLBurp: no stored scans found on restore.");
+            return;
+        }
         logging.logToOutput("SQLBurp: restoring " + stored.size() + " stored scan(s).");
         String base = configPanel.getApiUrl();
         for (String taskId : stored) {
