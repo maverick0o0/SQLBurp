@@ -23,6 +23,7 @@ public class ScanRecord {
     public final String     method;
     public volatile String  status;
     public volatile int     findings;
+    public volatile String  tmpFilePath;
     public final String     started;
     public final List<String>   logLines;
     public final List<JsonNode> results;

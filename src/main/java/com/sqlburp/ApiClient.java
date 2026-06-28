@@ -13,9 +13,17 @@ import static burp.api.montoya.utilities.json.JsonObjectNode.jsonObjectNode;
 public class ApiClient {
 
     private final Http http;
+    private String authHeader = "Basic QWRtaW46QWRtaW4=";
 
     public ApiClient(Http http) {
         this.http = http;
+    }
+
+    public void setAuth(String user, String pass) {
+        if (user != null && pass != null) {
+            String creds = user + ":" + pass;
+            this.authHeader = "Basic " + java.util.Base64.getEncoder().encodeToString(creds.getBytes());
+        }
     }
 
     private static String stripTrailingSlash(String s) {
@@ -27,7 +35,8 @@ public class ApiClient {
 
         HttpRequest req = HttpRequest.httpRequestFromUrl(url)
             .withMethod(method.toUpperCase())
-            .withHeader("Accept", "application/json");
+            .withHeader("Accept", "application/json")
+            .withHeader("Authorization", authHeader);
 
         if (body != null) {
             req = req.withHeader("Content-Type", "application/json")

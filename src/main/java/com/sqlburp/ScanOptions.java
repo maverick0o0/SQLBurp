@@ -7,19 +7,16 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.HashMap;
 
 import static burp.api.montoya.utilities.json.JsonObjectNode.jsonObjectNode;
 
 public class ScanOptions {
 
-    private static final Pattern CUSTOM_ARG_PATTERN =
-        Pattern.compile("--[\\w-]+=\\S+|--[\\w-]+");
-
     public int     level       = 1;
     public int     risk        = 1;
     public int     threads     = 1;
+    public int     delay       = 0;
     public String  technique   = "BEUSTQ";
     public String  dbms        = "(auto)";
     public String  tamper      = "";
@@ -62,6 +59,7 @@ public class ScanOptions {
         c.level       = this.level;
         c.risk        = this.risk;
         c.threads     = this.threads;
+        c.delay       = this.delay;
         c.technique   = this.technique;
         c.dbms        = this.dbms;
         c.tamper      = this.tamper;
@@ -85,6 +83,9 @@ public class ScanOptions {
         n.putNumber("level",          (long) level);
         n.putNumber("risk",           (long) risk);
         n.putNumber("threads",        (long) threads);
+        if (delay > 0) {
+            n.putNumber("delay",      (long) delay);
+        }
         n.putString("technique",      technique.isEmpty() ? "BEUSTQ" : technique);
         n.putBoolean("batch",          batch);
         n.putBoolean("randomAgent",    randomAgent);
@@ -126,21 +127,29 @@ public class ScanOptions {
      * Supports both "--flag=value" and "--flag value" forms, and bare boolean switches.
      */
     private void applyCustomArgs(JsonObjectNode n, String args) {
-        List<String> tokens = new ArrayList<>();
-        Matcher m = CUSTOM_ARG_PATTERN.matcher(args);
-        while (m.find()) tokens.add(m.group());
+        if (args == null || args.trim().isEmpty()) return;
+        String[] tokens = args.trim().split("\\s+");
 
-        for (int i = 0; i < tokens.size(); i++) {
-            String tok = tokens.get(i);
+        for (int i = 0; i < tokens.length; i++) {
+            String tok = tokens[i];
+            if (!tok.startsWith("-")) continue;
+            
             String key, val = null;
-            if (tok.contains("=")) {
+            if (tok.startsWith("--") && tok.contains("=")) {
                 key = tok.substring(2, tok.indexOf('=')).toLowerCase();
                 val = tok.substring(tok.indexOf('=') + 1);
-            } else {
+            } else if (tok.startsWith("--")) {
                 key = tok.substring(2).toLowerCase();
-                if (i + 1 < tokens.size() && !tokens.get(i + 1).startsWith("--")) {
-                    val = tokens.get(++i);
+                if (i + 1 < tokens.length && !tokens[i + 1].startsWith("-")) {
+                    val = tokens[++i];
                 }
+            } else if (tok.startsWith("-") && tok.length() > 1) { // -p
+                key = tok.substring(1).toLowerCase();
+                if (i + 1 < tokens.length && !tokens[i + 1].startsWith("-")) {
+                    val = tokens[++i];
+                }
+            } else {
+                continue;
             }
             putCustomArg(n, key, val);
         }
@@ -170,6 +179,11 @@ public class ScanOptions {
             case "test-filter": n.putString("testFilter", val != null ? val : ""); break;
             case "dbms-cred": n.putString("dbmsCred", val != null ? val : ""); break;
             case "second-url": n.putString("secondUrl", val != null ? val : ""); break;
+            case "string":     n.putString("string", val != null ? val : ""); break;
+            case "not-string": n.putString("notString", val != null ? val : ""); break;
+            case "regexp":     n.putString("regexp", val != null ? val : ""); break;
+            case "code":       n.putNumber("code", parseLong(val)); break;
+            case "p":          n.putString("testParameter", val != null ? val : ""); break;
             case "tor":              n.putBoolean("tor",            true); break;
             case "check-tor":        n.putBoolean("checkTor",       true); break;
             case "ignore-proxy":     n.putBoolean("ignoreProxy",    true); break;
@@ -202,6 +216,7 @@ public class ScanOptions {
         n.putNumber("level",       (long) level);
         n.putNumber("risk",        (long) risk);
         n.putNumber("threads",     (long) threads);
+        n.putNumber("delay",       (long) delay);
         n.putString("technique",   technique);
         n.putString("dbms",        dbms);
         n.putString("tamper",      tamper);
@@ -232,6 +247,7 @@ public class ScanOptions {
         o.level       = safeInt(j, "level", o.level);
         o.risk        = safeInt(j, "risk", o.risk);
         o.threads     = safeInt(j, "threads", o.threads);
+        o.delay       = safeInt(j, "delay", o.delay);
         o.technique   = safeStr(j, "technique", o.technique);
         o.dbms        = safeStr(j, "dbms", o.dbms);
         o.tamper      = safeStr(j, "tamper", o.tamper);
@@ -304,6 +320,7 @@ public class ScanOptions {
             "Level     : " + level,
             "Risk      : " + risk,
             "Threads   : " + threads,
+            "Delay     : " + delay,
             "Technique : " + technique,
             "DBMS      : " + dbms,
             "Tamper    : " + (tamper.isEmpty() ? "(none)" : tamper),
@@ -312,5 +329,46 @@ public class ScanOptions {
             "Extra Args: " + (customArgs.trim().isEmpty() ? "(none)" : customArgs.trim()),
             "Answers   : " + (answersStr.length() == 0 ? "(none)" : answersStr.toString()),
         };
+    }
+
+    public String toCommandString(String requestFile) {
+        StringBuilder cmd = new StringBuilder("sqlmap -r \"").append(requestFile).append("\"");
+
+        if (level != 1) cmd.append(" --level=").append(level);
+        if (risk != 1)  cmd.append(" --risk=").append(risk);
+        if (threads != 1) cmd.append(" --threads=").append(threads);
+        if (delay != 0) cmd.append(" --delay=").append(delay);
+        if (!"BEUSTQ".equals(technique) && !technique.isEmpty()) cmd.append(" --technique=").append(technique);
+        if (!"(auto)".equals(dbms) && !dbms.isEmpty()) cmd.append(" --dbms=\"").append(dbms).append("\"");
+        if (tamper != null && !tamper.isEmpty()) cmd.append(" --tamper=\"").append(tamper).append("\"");
+        if (verbose != 1) cmd.append(" -v ").append(verbose);
+
+        if (batch) cmd.append(" --batch");
+        if (randomAgent) cmd.append(" --random-agent");
+        if (forms) cmd.append(" --forms");
+        if (getDbs) cmd.append(" --dbs");
+        if (currentUser) cmd.append(" --current-user");
+        if (banner) cmd.append(" --banner");
+        if (isDba) cmd.append(" --is-dba");
+        if (forceSSL) cmd.append(" --force-ssl");
+
+        if (customArgs != null && !customArgs.trim().isEmpty()) {
+            cmd.append(" ").append(customArgs.trim());
+        }
+
+        if (!batch && answers != null && !answers.isEmpty()) {
+            StringBuilder answersStr = new StringBuilder();
+            for (Map.Entry<String, String> e : answers.entrySet()) {
+                if (e.getValue() != null && !e.getValue().isEmpty()) {
+                    if (answersStr.length() > 0) answersStr.append(',');
+                    answersStr.append(e.getKey()).append('=').append(e.getValue());
+                }
+            }
+            if (answersStr.length() > 0) {
+                cmd.append(" --answers=\"").append(answersStr).append("\"");
+            }
+        }
+
+        return cmd.toString();
     }
 }

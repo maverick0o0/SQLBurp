@@ -24,6 +24,16 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import burp.api.montoya.proxy.http.ProxyRequestHandler;
+import burp.api.montoya.proxy.http.ProxyRequestReceivedAction;
+import burp.api.montoya.proxy.http.ProxyRequestToBeSentAction;
+import burp.api.montoya.proxy.http.InterceptedRequest;
+import burp.api.montoya.proxy.http.ProxyResponseHandler;
+import burp.api.montoya.proxy.http.ProxyResponseReceivedAction;
+import burp.api.montoya.proxy.http.ProxyResponseToBeSentAction;
+import burp.api.montoya.proxy.http.InterceptedResponse;
+import burp.api.montoya.http.HttpService;
+import burp.api.montoya.http.message.requests.HttpRequest;
 
 public class SQLBurp implements BurpExtension {
 
@@ -42,6 +52,7 @@ public class SQLBurp implements BurpExtension {
     private final Map<String, ScanRecord> recordsMap  = new ConcurrentHashMap<>();
     private volatile String               selectedTid = null;
     private JScrollPane                   previewScroll;
+    private RequestRepoPanel              repoPanel;
 
     // ------------------------------------------------------------------
     // BurpExtension entry point
@@ -128,10 +139,14 @@ public class SQLBurp implements BurpExtension {
         toolbar.setFloatable(false);
         JButton stopAllBtn        = new JButton("Stop All");
         JButton removeFinishedBtn = new JButton("Remove Finished");
+        JButton clearAllBtn       = new JButton("Clear All");
         stopAllBtn.addActionListener(e -> stopAllTasks());
         removeFinishedBtn.addActionListener(e -> removeFinished());
+        clearAllBtn.addActionListener(e -> clearAll());
         toolbar.add(stopAllBtn);
         toolbar.add(removeFinishedBtn);
+        toolbar.addSeparator();
+        toolbar.add(clearAllBtn);
 
         // Table + log split inside Scans tab
         JSplitPane scansSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableScroll, previewScroll);
@@ -141,8 +156,12 @@ public class SQLBurp implements BurpExtension {
         scansTab.add(toolbar, BorderLayout.NORTH);
         scansTab.add(scansSplit, BorderLayout.CENTER);
 
+        // --- Request Repo Tab ---
+        repoPanel = new RequestRepoPanel(api, this);
+
         // --- Tabbed pane ---
         JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Request Repository", repoPanel);
         tabs.addTab("Options", configScroll);
         tabs.addTab("Scans",   scansTab);
 
@@ -156,6 +175,40 @@ public class SQLBurp implements BurpExtension {
 
         // Register context menu
         api.userInterface().registerContextMenuItemsProvider(new SqlBurpMenuProvider());
+
+        // Register Proxy Handlers
+        api.proxy().registerRequestHandler(new ProxyRequestHandler() {
+            @Override
+            public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest req) {
+                return ProxyRequestReceivedAction.continueWith(req);
+            }
+            @Override
+            public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest req) {
+                return ProxyRequestToBeSentAction.continueWith(req);
+            }
+        });
+        
+        api.proxy().registerResponseHandler(new ProxyResponseHandler() {
+            @Override
+            public ProxyResponseReceivedAction handleResponseReceived(InterceptedResponse res) {
+                if (api.scope().isInScope(res.request().url())) {
+                    String path = res.request().pathWithoutQuery().toLowerCase();
+                    if (!path.endsWith(".js") && !path.endsWith(".png") && !path.endsWith(".svg") && 
+                        !path.endsWith(".css") && !path.endsWith(".ico") && !path.endsWith(".jpg") && 
+                        !path.endsWith(".jpeg") && !path.endsWith(".gif") && !path.endsWith(".woff") && 
+                        !path.endsWith(".woff2") && !path.endsWith(".ttf")) {
+                        burp.api.montoya.http.message.HttpRequestResponse rr = 
+                            burp.api.montoya.http.message.HttpRequestResponse.httpRequestResponse(res.request(), res);
+                        repoPanel.handleProxyRequest(rr);
+                    }
+                }
+                return ProxyResponseReceivedAction.continueWith(res);
+            }
+            @Override
+            public ProxyResponseToBeSentAction handleResponseToBeSent(InterceptedResponse res) {
+                return ProxyResponseToBeSentAction.continueWith(res);
+            }
+        });
 
         // Restore persisted scans
         new Thread(this::restorePersistedScans, "sqlburp-restore").start();
@@ -233,10 +286,42 @@ public class SQLBurp implements BurpExtension {
     // Scan submission
     // ------------------------------------------------------------------
 
+    public void submitScanAsync(HttpRequest req, HttpService svc) {
+        String proto = svc.secure() ? "https" : "http";
+        String target = proto + "://" + svc.host() + ":" + svc.port();
+        String method = req.method();
+        String raw = req.toString();
+        new Thread(() -> submitScanInternal(target, method, raw, svc.secure()), "sqlburp-scan").start();
+    }
+
+    public void submitScanBlocking(HttpRequest req, HttpService svc) {
+        String proto = svc.secure() ? "https" : "http";
+        String target = proto + "://" + svc.host() + ":" + svc.port();
+        String method = req.method();
+        String raw = req.toString();
+        
+        String taskId = submitScanInternal(target, method, raw, svc.secure());
+        if (taskId == null) return;
+        
+        while (true) {
+            ScanRecord r = recordsMap.get(taskId);
+            if (r == null) break;
+            if (ScanRecord.STATUS_DONE.equals(r.status) || ScanRecord.STATUS_ERROR.equals(r.status) || ScanRecord.STATUS_STOPPED.equals(r.status) || ScanRecord.STATUS_VULN.equals(r.status)) {
+                break;
+            }
+            try { Thread.sleep(2000); } catch (Exception ignored) {}
+        }
+    }
+
     private void submitScan(String target, String method, String rawRequest, boolean ssl) {
+        submitScanInternal(target, method, rawRequest, ssl);
+    }
+
+    private String submitScanInternal(String target, String method, String rawRequest, boolean ssl) {
         String taskId = null;
         ScanRecord rec = null;
         try {
+            apiClient.setAuth(configPanel.getApiUser(), configPanel.getApiPass());
             String baseUrl = configPanel.getApiUrl();
             taskId = apiClient.newTask(baseUrl);
 
@@ -251,9 +336,23 @@ public class SQLBurp implements BurpExtension {
             // Write request to a temp file for sqlmap
             File tmp = File.createTempFile("sqlburp_", ".txt");
             tmp.deleteOnExit();
-            try (FileWriter fw = new FileWriter(tmp)) { fw.write(rawRequest); }
+            String rawRequestStr = rawRequest.replace("%2A", "*").replace("%2a", "*");
+            // sqlmap's -r parser chokes on HTTP/2 string format, so we downgrade it to HTTP/1.1 for the text file
+            rawRequestStr = rawRequestStr.replaceFirst("(?i)HTTP/2(?:\\.0)?\\s*(\r?\n)", "HTTP/1.1$1");
+            
+            // Workaround for a bug in sqlmap's PROBLEMATIC_CUSTOM_INJECTION_PATTERNS 
+            // where (;q=[^;']+) matches newlines and consumes all subsequent headers, hiding their '*' markers
+            rawRequestStr = rawRequestStr.replace(";q=", "; q=");
 
-            JsonObjectNode optDict = opts.toApiDict(tmp.getAbsolutePath());
+            if (!rawRequestStr.endsWith("\n\n") && !rawRequestStr.endsWith("\r\n\r\n")) {
+                if (rawRequestStr.endsWith("\r\n")) rawRequestStr += "\r\n";
+                else if (rawRequestStr.endsWith("\n")) rawRequestStr += "\n";
+                else rawRequestStr += "\r\n\r\n";
+            }
+            try (FileWriter fw = new FileWriter(tmp)) { fw.write(rawRequestStr); }
+            rec.tmpFilePath = tmp.getAbsolutePath();
+
+            JsonObjectNode optDict = opts.toApiDict(rec.tmpFilePath);
             apiClient.post(baseUrl, "/option/" + taskId + "/set", optDict);
 
             JsonObjectNode empty = jsonObjectNode();
@@ -286,6 +385,7 @@ public class SQLBurp implements BurpExtension {
                 persist.saveScanRecord(rec);
             }
         }
+        return taskId;
     }
 
     // ------------------------------------------------------------------
@@ -367,6 +467,23 @@ public class SQLBurp implements BurpExtension {
         }
     }
 
+    private void clearAll() {
+        stopAllTasks();
+        for (int i = tableModel.getRowCount() - 1; i >= 0; i--) {
+            ScanRecord r = tableModel.getRecord(i);
+            if (r != null) {
+                apiClient.deleteTask(configPanel.getApiUrl(), r.taskId);
+                persist.deleteScanRecord(r.taskId);
+                recordsMap.remove(r.taskId);
+                if (r.taskId.equals(selectedTid)) {
+                    selectedTid = null;
+                    previewArea.setText("Select a scan row above to view its log.");
+                }
+                tableModel.removeRow(i);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Context menu for table rows
     // ------------------------------------------------------------------
@@ -409,6 +526,12 @@ public class SQLBurp implements BurpExtension {
         sb.append("Started : ").append(rec.started).append("\n\n");
         sb.append("--- Options ---\n");
         for (String line : rec.options.summaryLines()) sb.append(line).append("\n");
+        
+        if (rec.tmpFilePath != null) {
+            sb.append("\n--- Equivalent Command ---\n");
+            sb.append(rec.options.toCommandString(rec.tmpFilePath)).append("\n");
+        }
+        
         sb.append("\n--- Log ---\n");
         synchronized (rec.logLines) {
             for (String line : rec.logLines) sb.append(line).append("\n");
@@ -438,6 +561,7 @@ public class SQLBurp implements BurpExtension {
         String base = configPanel.getApiUrl();
         new Thread(() -> {
             try {
+                apiClient.setAuth(configPanel.getApiUser(), configPanel.getApiPass());
                 String tid = apiClient.newTask(base);
                 apiClient.deleteTask(base, tid);
                 SwingUtilities.invokeLater(() ->

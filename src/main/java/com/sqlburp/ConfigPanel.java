@@ -9,6 +9,8 @@ import java.util.Map;
 public class ConfigPanel extends JPanel {
 
     final JTextField  apiUrlField;
+    final JTextField  apiUserField;
+    final JTextField  apiPassField;
     final JSpinner    levelSpin;
     final JSpinner    riskSpin;
     final JSpinner    threadsSpin;
@@ -24,6 +26,7 @@ public class ConfigPanel extends JPanel {
     final JCheckBox   bannerCheck;
     final JCheckBox   isdbaCheck;
     final JSpinner    pollSpin;
+    final JSpinner    delaySpin;
     final JButton     pingBtn;
 
     /** One combo per prompt: "Yes", "No", "Default" (omitted from answers string). */
@@ -36,10 +39,17 @@ public class ConfigPanel extends JPanel {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-        // --- API URL ---
+        // --- API URL & Auth ---
         JPanel urlPanel = titledPanel("API");
         apiUrlField = new JTextField("http://127.0.0.1:8775", 20);
         urlPanel.add(label("URL")); urlPanel.add(apiUrlField);
+
+        apiUserField = new JTextField("admin", 10);
+        urlPanel.add(new JLabel(" User:")); urlPanel.add(apiUserField);
+
+        apiPassField = new JTextField("admin", 10);
+        urlPanel.add(new JLabel(" Pass:")); urlPanel.add(apiPassField);
+
         pingBtn = new JButton("Ping");
         urlPanel.add(pingBtn);
         add(urlPanel);
@@ -57,6 +67,7 @@ public class ConfigPanel extends JPanel {
         });
         tamperField = new JTextField("", 14);
         pollSpin    = new JSpinner(new SpinnerNumberModel(3, 1, 30, 1));
+        delaySpin   = new JSpinner(new SpinnerNumberModel(0, 0, 100, 1));
 
         optPanel.add(label("Level"));    optPanel.add(levelSpin);
         optPanel.add(label("Risk"));     optPanel.add(riskSpin);
@@ -65,6 +76,7 @@ public class ConfigPanel extends JPanel {
         optPanel.add(label("DBMS"));     optPanel.add(dbmsCombo);
         optPanel.add(label("Tamper"));   optPanel.add(tamperField);
         optPanel.add(label("Poll (s)")); optPanel.add(pollSpin);
+        optPanel.add(label("Delay (s)"));optPanel.add(delaySpin);
         add(optPanel);
 
         // --- Extra Args ---
@@ -142,6 +154,7 @@ public class ConfigPanel extends JPanel {
         o.level       = (int) levelSpin.getValue();
         o.risk        = (int) riskSpin.getValue();
         o.threads     = (int) threadsSpin.getValue();
+        o.delay       = (int) delaySpin.getValue();
         o.technique   = techniqueField.getText().trim().isEmpty() ? "BEUSTQ" : techniqueField.getText().trim();
         o.dbms        = (String) dbmsCombo.getSelectedItem();
         o.tamper      = tamperField.getText().trim();
@@ -172,7 +185,10 @@ public class ConfigPanel extends JPanel {
     }
 
     public String getApiUrl() { return apiUrlField.getText().trim(); }
+    public String getApiUser() { return apiUserField.getText().trim(); }
+    public String getApiPass() { return apiPassField.getText().trim(); }
     public int    getPollMs() { return (int) pollSpin.getValue() * 1_000; }
+    public int    getDelay()  { return (int) delaySpin.getValue(); }
 
     private JPanel titledPanel(String title) {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
