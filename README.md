@@ -158,7 +158,20 @@ All scan data is stored in the Burp project file via the Montoya API's `persiste
 - **Incremental saving** - the scan record is written on start and updated on every log line, so data is preserved even if Burp is closed mid-scan.
 - **Automatic restore** - all scans for the current project are loaded back into the table when the extension initialises.
 
-Deleting a scan via right-click or Remove Finished purges it from both the API and the project permanently.
+De-selecting a scan or using "Remove Finished" purges it from both the API and the project permanently.
+
+## 🗄️ Request Repository
+
+SQLBurp captures all incoming proxy requests automatically, regardless of Burp Target Scope, filtering out static assets (images, CSS, JS). This allows you to collect a rich repository of requests as you browse the target application.
+
+From the **Request Repository** tab you can:
+- Review request and response contents natively.
+- Use the **Mark Injection Points** tools to manually define custom injection markers (`*`) in specific areas (Headers, Cookies, Body, User-Agent) before sending them to sqlmap.
+- Dispatch requests to the API sequentially or in parallel.
+
+## 🛠️ Helper Script
+
+For your convenience, a universal `.bat` file is included (`start_sqlmap_api.bat`). Simply place it in the same directory as your `sqlmap.py` script and run it to easily launch the REST API server with the required configuration and credentials for SQLBurp.
 
 ## 📝 Notes
 

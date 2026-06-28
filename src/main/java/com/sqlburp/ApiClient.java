@@ -49,9 +49,24 @@ public class ApiClient {
         }
 
         String responseBody = rr.response().bodyToString();
-        JsonNode node = JsonNode.jsonNode(responseBody);
+        
+        if (rr.response().statusCode() == 401) {
+            throw new IOException("Authentication Failed (401 Unauthorized): " + url);
+        }
+        
+        if (responseBody == null || responseBody.trim().isEmpty()) {
+            throw new IOException("Empty response from " + url + " (Status: " + rr.response().statusCode() + ")");
+        }
+        
+        JsonNode node;
+        try {
+            node = JsonNode.jsonNode(responseBody);
+        } catch (Exception e) {
+            throw new IOException("Invalid JSON response from " + url + " (Status: " + rr.response().statusCode() + "): " + responseBody, e);
+        }
+        
         if (node == null) {
-            throw new IOException("Invalid JSON response from " + url + ": " + responseBody);
+            throw new IOException("Invalid JSON response from " + url + " (Status: " + rr.response().statusCode() + "): " + responseBody);
         }
         return node;
     }

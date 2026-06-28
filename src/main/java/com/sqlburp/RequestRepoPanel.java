@@ -107,12 +107,19 @@ public class RequestRepoPanel extends JPanel {
         deselectAllBtn.addActionListener(e -> table.clearSelection());
         
         JButton removeBtn = new JButton("Remove");
+        removeBtn.setForeground(new Color(220, 53, 69)); // Red text for destructive action
         removeBtn.addActionListener(e -> removeSelected());
         
         JButton seqScanBtn = new JButton("Scan Sequential");
+        seqScanBtn.putClientProperty("JButton.buttonType", "default"); // Primary button style
+        seqScanBtn.setBackground(new Color(13, 110, 253));
+        seqScanBtn.setForeground(Color.WHITE);
         seqScanBtn.addActionListener(e -> scanSelected(true));
         
         JButton parScanBtn = new JButton("Scan Parallel");
+        parScanBtn.putClientProperty("JButton.buttonType", "default"); // Primary button style
+        parScanBtn.setBackground(new Color(25, 135, 84));
+        parScanBtn.setForeground(Color.WHITE);
         parScanBtn.addActionListener(e -> scanSelected(false));
         
         toolbar.add(selectAllBtn);

@@ -16,7 +16,7 @@ public class ConfigPanel extends JPanel {
     final JSpinner    threadsSpin;
     final JTextField  techniqueField;
     final JComboBox<String> dbmsCombo;
-    final JTextField  tamperField;
+    final JComboBox<String> tamperCombo;
     final JTextField  customArgsField;
     final JCheckBox   batchCheck;
     final JCheckBox   randomAgentCheck;
@@ -65,7 +65,28 @@ public class ConfigPanel extends JPanel {
             "Oracle", "SQLite", "Microsoft Access", "Firebird",
             "Sybase", "SAP MaxDB", "HSQLDB", "Informix"
         });
-        tamperField = new JTextField("", 14);
+        // Define a list of known standard tamper scripts
+        String[] defaultTampers = {
+            "", "apostrophemask", "apostrophenullencode", "appendnullbyte", "base64encode", 
+            "between", "binary", "blindbinary", "bluecoat", "chardoubleencode", "charencode", 
+            "charunicodeencode", "charunicodeescape", "commalesslimit", "commalessmid", 
+            "commentbeforeparentheses", "concat2concatws", "decentities", "dunion", "equaltolike", 
+            "equaltorlike", "escapequotes", "greatest", "halfversionedmorekeywords", "hex2char", 
+            "hexentities", "htmlencode", "if2case", "ifnull2casewhenisnull", "ifnull2ifisnull", 
+            "informationschemacomment", "infoschema2innodb", "least", "lowercase", "luanginx", 
+            "luanginxmore", "misunion", "modsecurityversioned", "modsecurityzeroversioned", 
+            "multiplespaces", "ord2ascii", "overlongutf8", "overlongutf8more", "percentage", 
+            "plus2concat", "plus2fnconcat", "randomcase", "randomcomments", "schemasplit", 
+            "scientific", "sleep2getlock", "space2comment", "space2dash", "space2hash", 
+            "space2morecomment", "space2morehash", "space2mssqlblank", "space2mssqlhash", 
+            "space2mysqlblank", "space2mysqldash", "space2plus", "space2randomblank", "sp_password", 
+            "substring2leftright", "symboliclogical", "unionalltounion", "unmagicquotes", "uppercase", 
+            "varnish", "versionedkeywords", "versionedmorekeywords", "xforwardedfor"
+        };
+        
+        tamperCombo = new JComboBox<>(defaultTampers);
+        tamperCombo.setEditable(true); // Allow them to type custom combinations like "tamper1,tamper2"
+        
         pollSpin    = new JSpinner(new SpinnerNumberModel(3, 1, 30, 1));
         delaySpin   = new JSpinner(new SpinnerNumberModel(0, 0, 100, 1));
 
@@ -74,7 +95,7 @@ public class ConfigPanel extends JPanel {
         optPanel.add(label("Threads"));  optPanel.add(threadsSpin);
         optPanel.add(label("Technique"));optPanel.add(techniqueField);
         optPanel.add(label("DBMS"));     optPanel.add(dbmsCombo);
-        optPanel.add(label("Tamper"));   optPanel.add(tamperField);
+        optPanel.add(label("Tamper"));   optPanel.add(tamperCombo);
         optPanel.add(label("Poll (s)")); optPanel.add(pollSpin);
         optPanel.add(label("Delay (s)"));optPanel.add(delaySpin);
         add(optPanel);
@@ -157,7 +178,8 @@ public class ConfigPanel extends JPanel {
         o.delay       = (int) delaySpin.getValue();
         o.technique   = techniqueField.getText().trim().isEmpty() ? "BEUSTQ" : techniqueField.getText().trim();
         o.dbms        = (String) dbmsCombo.getSelectedItem();
-        o.tamper      = tamperField.getText().trim();
+        Object selectedTamper = tamperCombo.getSelectedItem();
+        o.tamper      = selectedTamper != null ? selectedTamper.toString().trim() : "";
         o.batch       = batchCheck.isSelected();
         o.randomAgent = randomAgentCheck.isSelected();
         o.forms       = formsCheck.isSelected();

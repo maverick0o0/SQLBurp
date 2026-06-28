@@ -162,8 +162,8 @@ public class SQLBurp implements BurpExtension {
         // --- Tabbed pane ---
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Request Repository", repoPanel);
-        tabs.addTab("Options", configScroll);
         tabs.addTab("Scans",   scansTab);
+        tabs.addTab("Options", configScroll);
 
         mainPanel.add(tabs, BorderLayout.CENTER);
 
@@ -176,10 +176,18 @@ public class SQLBurp implements BurpExtension {
         // Register context menu
         api.userInterface().registerContextMenuItemsProvider(new SqlBurpMenuProvider());
 
-        // Register Proxy Handlers
         api.proxy().registerRequestHandler(new ProxyRequestHandler() {
             @Override
             public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest req) {
+                String path = req.pathWithoutQuery().toLowerCase();
+                if (!path.endsWith(".js") && !path.endsWith(".png") && !path.endsWith(".svg") && 
+                    !path.endsWith(".css") && !path.endsWith(".ico") && !path.endsWith(".jpg") && 
+                    !path.endsWith(".jpeg") && !path.endsWith(".gif") && !path.endsWith(".woff") && 
+                    !path.endsWith(".woff2") && !path.endsWith(".ttf")) {
+                    burp.api.montoya.http.message.HttpRequestResponse rr = 
+                        burp.api.montoya.http.message.HttpRequestResponse.httpRequestResponse(req, null);
+                    repoPanel.handleProxyRequest(rr);
+                }
                 return ProxyRequestReceivedAction.continueWith(req);
             }
             @Override
@@ -191,16 +199,14 @@ public class SQLBurp implements BurpExtension {
         api.proxy().registerResponseHandler(new ProxyResponseHandler() {
             @Override
             public ProxyResponseReceivedAction handleResponseReceived(InterceptedResponse res) {
-                if (api.scope().isInScope(res.request().url())) {
-                    String path = res.request().pathWithoutQuery().toLowerCase();
-                    if (!path.endsWith(".js") && !path.endsWith(".png") && !path.endsWith(".svg") && 
-                        !path.endsWith(".css") && !path.endsWith(".ico") && !path.endsWith(".jpg") && 
-                        !path.endsWith(".jpeg") && !path.endsWith(".gif") && !path.endsWith(".woff") && 
-                        !path.endsWith(".woff2") && !path.endsWith(".ttf")) {
-                        burp.api.montoya.http.message.HttpRequestResponse rr = 
-                            burp.api.montoya.http.message.HttpRequestResponse.httpRequestResponse(res.request(), res);
-                        repoPanel.handleProxyRequest(rr);
-                    }
+                String path = res.request().pathWithoutQuery().toLowerCase();
+                if (!path.endsWith(".js") && !path.endsWith(".png") && !path.endsWith(".svg") && 
+                    !path.endsWith(".css") && !path.endsWith(".ico") && !path.endsWith(".jpg") && 
+                    !path.endsWith(".jpeg") && !path.endsWith(".gif") && !path.endsWith(".woff") && 
+                    !path.endsWith(".woff2") && !path.endsWith(".ttf")) {
+                    burp.api.montoya.http.message.HttpRequestResponse rr = 
+                        burp.api.montoya.http.message.HttpRequestResponse.httpRequestResponse(res.request(), res);
+                    repoPanel.handleProxyRequest(rr);
                 }
                 return ProxyResponseReceivedAction.continueWith(res);
             }
@@ -336,20 +342,7 @@ public class SQLBurp implements BurpExtension {
             // Write request to a temp file for sqlmap
             File tmp = File.createTempFile("sqlburp_", ".txt");
             tmp.deleteOnExit();
-            String rawRequestStr = rawRequest.replace("%2A", "*").replace("%2a", "*");
-            // sqlmap's -r parser chokes on HTTP/2 string format, so we downgrade it to HTTP/1.1 for the text file
-            rawRequestStr = rawRequestStr.replaceFirst("(?i)HTTP/2(?:\\.0)?\\s*(\r?\n)", "HTTP/1.1$1");
-            
-            // Workaround for a bug in sqlmap's PROBLEMATIC_CUSTOM_INJECTION_PATTERNS 
-            // where (;q=[^;']+) matches newlines and consumes all subsequent headers, hiding their '*' markers
-            rawRequestStr = rawRequestStr.replace(";q=", "; q=");
-
-            if (!rawRequestStr.endsWith("\n\n") && !rawRequestStr.endsWith("\r\n\r\n")) {
-                if (rawRequestStr.endsWith("\r\n")) rawRequestStr += "\r\n";
-                else if (rawRequestStr.endsWith("\n")) rawRequestStr += "\n";
-                else rawRequestStr += "\r\n\r\n";
-            }
-            try (FileWriter fw = new FileWriter(tmp)) { fw.write(rawRequestStr); }
+            try (FileWriter fw = new FileWriter(tmp)) { fw.write(rawRequest); }
             rec.tmpFilePath = tmp.getAbsolutePath();
 
             JsonObjectNode optDict = opts.toApiDict(rec.tmpFilePath);
